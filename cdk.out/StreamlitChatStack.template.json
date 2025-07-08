@@ -1,0 +1,221 @@
+{
+ "Resources": {
+  "StreamlitSg205A2796": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "Allow Streamlit",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "SecurityGroupIngress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Streamlit 8501",
+      "FromPort": 8501,
+      "IpProtocol": "tcp",
+      "ToPort": 8501
+     }
+    ],
+    "VpcId": "vpc-0f8bc7eafd9b30ca7"
+   },
+   "Metadata": {
+    "aws:cdk:path": "StreamlitChatStack/StreamlitSg/Resource"
+   }
+  },
+  "StreamlitRole635FB615": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ec2.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/AmazonSSMManagedInstanceCore"
+       ]
+      ]
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "StreamlitChatStack/StreamlitRole/Resource"
+   }
+  },
+  "StreamlitRoleDefaultPolicy0D5D8F00": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": "bedrock:InvokeAgent",
+       "Effect": "Allow",
+       "Resource": "*"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "StreamlitRoleDefaultPolicy0D5D8F00",
+    "Roles": [
+     {
+      "Ref": "StreamlitRole635FB615"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "StreamlitChatStack/StreamlitRole/DefaultPolicy/Resource"
+   }
+  },
+  "StreamlitHostInstanceProfile05EBAA7F": {
+   "Type": "AWS::IAM::InstanceProfile",
+   "Properties": {
+    "Roles": [
+     {
+      "Ref": "StreamlitRole635FB615"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "StreamlitChatStack/StreamlitHost/InstanceProfile"
+   }
+  },
+  "StreamlitHost5C6E51F7": {
+   "Type": "AWS::EC2::Instance",
+   "Properties": {
+    "AvailabilityZone": "us-west-2a",
+    "IamInstanceProfile": {
+     "Ref": "StreamlitHostInstanceProfile05EBAA7F"
+    },
+    "ImageId": {
+     "Ref": "SsmParameterValueawsserviceamiamazonlinuxlatestal2023amikernel61x8664C96584B6F00A464EAD1953AFF4B05118Parameter"
+    },
+    "InstanceType": "t3.small",
+    "SecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "StreamlitSg205A2796",
+       "GroupId"
+      ]
+     }
+    ],
+    "SubnetId": "subnet-0ab4b2d0d94f696fd",
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "StreamlitChatStack/StreamlitHost"
+     }
+    ],
+    "UserData": {
+     "Fn::Base64": {
+      "Fn::Join": [
+       "",
+       [
+        "#!/bin/bash\necho \"export AGENT_ID=",
+        {
+         "Fn::ImportValue": "BedrockAgentStack:ExportsOutputFnGetAttCfnAgentAgentIdEA1EE3A0"
+        },
+        "\" >> /etc/profile\necho \"export AGENT_ALIAS_ID=",
+        {
+         "Fn::ImportValue": "BedrockAgentStack:ExportsOutputFnGetAttMyCfnAgentAliasAgentAliasId40ED6199"
+        },
+        "\" >> /etc/profile\necho \"export AWS_REGION=us-west-2\" >> /etc/profile\nyum -y update\nyum -y install python3 python3-pip git\npython3 -m venv /home/ec2-user/venv\nsource /home/ec2-user/venv/bin/activate\npip install --upgrade pip\npip install streamlit streamlit-chat boto3\ncat > /home/ec2-user/app.py << \"PYEOF\"\nimport os, uuid, boto3, streamlit as st\n\nAGENT_ID       = os.getenv(\"AGENT_ID\")\nAGENT_ALIAS_ID = os.getenv(\"AGENT_ALIAS_ID\")\nREGION         = os.getenv(\"AWS_REGION\")\n\nclient = boto3.client(\"bedrock-agent-runtime\", region_name=REGION)\n\nst.set_page_config(page_title=\"Bedrock Agent Chat\", page_icon=\"🤖\")\nst.title(\"🦙 Bedrock Agent Chat — Streaming\")\n\nif \"messages\" not in st.session_state:\n    st.session_state[\"messages\"] = []\n\n# 이전 대화 렌더링\nfor m in st.session_state[\"messages\"]:\n    st.chat_message(m[\"role\"]).markdown(m[\"content\"])\n\nif prompt := st.chat_input(\"Say something\"):\n    st.session_state[\"messages\"].append({\"role\": \"user\", \"content\": prompt})\n\n    # 빈 placeholder 생성\n    placeholder = st.chat_message(\"assistant\").empty()\n    collected   = []\n\n    resp = client.invoke_agent(\n        agentId      = AGENT_ID,\n        agentAliasId = AGENT_ALIAS_ID,\n        sessionId    = str(uuid.uuid4()),\n        inputText    = prompt,\n    )\n\n    # EventStream 파싱\n    for event in resp[\"completion\"]:\n        if \"chunk\" not in event:\n            continue\n\n        chunk = event[\"chunk\"]\n        if \"content\" in chunk:\n            token = chunk[\"content\"]\n        elif \"bytes\" in chunk:\n            token = chunk[\"bytes\"].decode(\"utf-8\")\n        else:\n            continue\n\n        collected.append(token)\n        placeholder.markdown(\"\".join(collected))\n\n    answer = \"\".join(collected)\n    st.session_state[\"messages\"].append(\n        {\"role\": \"assistant\", \"content\": answer})\n\nPYEOF\nchown ec2-user:ec2-user /home/ec2-user/app.py\nsu - ec2-user -c \"bash -lc 'source ~/venv/bin/activate && nohup streamlit run ~/app.py --server.port 8501 --server.headless true > ~/streamlit.log 2>&1 &'\""
+       ]
+      ]
+     }
+    }
+   },
+   "DependsOn": [
+    "StreamlitRoleDefaultPolicy0D5D8F00",
+    "StreamlitRole635FB615"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "StreamlitChatStack/StreamlitHost/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/1VOSw6CMBA9C/syCph4ABfGlQQOYGod4gi0pJ2GkKZ3N1SJcfW+eXklFIcj7DM5u1w9+nygO4SWpepFg854q1DI2d0CqhJCi8pb4uVsjZ/EqdP/xkU7llrhmmw8CpIjhMYMyU5Ym4HUssof2/q1NR0NGGOKpZUjMtpVXD1PntPI91kU9cJPo3cVFBUU2csR5dZrphGh+eAbkGuiOeEAAAA="
+   },
+   "Metadata": {
+    "aws:cdk:path": "StreamlitChatStack/CDKMetadata/Default"
+   }
+  }
+ },
+ "Parameters": {
+  "SsmParameterValueawsserviceamiamazonlinuxlatestal2023amikernel61x8664C96584B6F00A464EAD1953AFF4B05118Parameter": {
+   "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+   "Default": "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64"
+  },
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Outputs": {
+  "StreamlitURL": {
+   "Description": "Open after ~2‒3 min to chat with the agent",
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "http://",
+      {
+       "Fn::GetAtt": [
+        "StreamlitHost5C6E51F7",
+        "PublicDnsName"
+       ]
+      },
+      ":8501"
+     ]
+    ]
+   }
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}
