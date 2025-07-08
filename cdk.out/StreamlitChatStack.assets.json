@@ -1,7 +1,7 @@
 {
   "version": "36.0.0",
   "files": {
-    "6357d53aea799230ee513afeb429112ce43d0c45e42dc573b1de82334a196a91": {
+    "9e3bf4dca40cf8aacf90d2ccda64809818c885185389db06cd034ee975c4325d": {
       "source": {
         "path": "StreamlitChatStack.template.json",
         "packaging": "file"
@@ -9,7 +9,7 @@
       "destinations": {
         "682033488544-us-west-2": {
           "bucketName": "cdk-hnb659fds-assets-682033488544-us-west-2",
-          "objectKey": "6357d53aea799230ee513afeb429112ce43d0c45e42dc573b1de82334a196a91.json",
+          "objectKey": "9e3bf4dca40cf8aacf90d2ccda64809818c885185389db06cd034ee975c4325d.json",
           "region": "us-west-2",
           "assumeRoleArn": "arn:${AWS::Partition}:iam::682033488544:role/cdk-hnb659fds-file-publishing-role-682033488544-us-west-2"
         }

@@ -67,7 +67,7 @@ REGION         = os.getenv("AWS_REGION")
 client = boto3.client("bedrock-agent-runtime", region_name=REGION)
 
 st.set_page_config(page_title="Bedrock Agent Chat", page_icon="🤖")
-st.title("🦙 Bedrock Agent Chat — Streaming")
+st.title("🦙 Bedrock Agent Chat")
 
 if "messages" not in st.session_state:
     st.session_state["messages"] = []
