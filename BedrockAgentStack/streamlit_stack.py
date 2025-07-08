@@ -79,6 +79,8 @@ for m in st.session_state["messages"]:
 if prompt := st.chat_input("Say something"):
     st.session_state["messages"].append({"role": "user", "content": prompt})
 
+    st.chat_message("user").markdown(prompt)
+
     # 빈 placeholder 생성
     placeholder = st.chat_message("assistant").empty()
     collected   = []
